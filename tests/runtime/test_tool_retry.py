@@ -508,17 +508,25 @@ def test_tool_retry_non_timeout_exception_no_retry(
     # "tool_name" must match the tool that failed.
     assert evt["tool_name"] == "broken_tool"
 
+    # "error.code" must be "tool_error" — a non-timeout exception is not a
+    # network timeout. Failure means the code is still hardcoded "timeout".
+    assert evt["error"]["code"] == "tool_error"
+
     # "error.message" must contain "ValueError" so the error type is
-    # visible to the caller, and "attempts exhausted" for the terminal
-    # format.
-    # Failure means the original exception type was lost.
+    # visible to the caller, and report the REAL attempt count. The tool
+    # raised on its first (and only) call, so exactly "1 attempt" was made
+    # — not the configured maximum.
+    # Failure means the original exception type was lost or the count was
+    # fabricated from the retry budget.
     assert "ValueError" in evt["error"]["message"]
-    assert "attempts exhausted" in evt["error"]["message"]
+    assert "1 attempt exhausted" in evt["error"]["message"]
 
     # "error.detail" must be None.
     assert evt["error"]["detail"] is None
 
-    # The return value must be an error string (not raised).
+    # The return value must be an error string (not raised) reporting the
+    # real single attempt.
     # Failure means the function let the ValueError propagate.
     assert isinstance(result, str)
     assert "ValueError" in result
+    assert "1 attempt" in result

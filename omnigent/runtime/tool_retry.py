@@ -120,13 +120,19 @@ def execute_tool_with_retry(
         all retries are exhausted.
     """
     last_error: str | None = None
+    # Default to "timeout"; overwritten to "tool_error" if a non-timeout
+    # exception ends the loop. Only meaningful once last_error is set.
+    error_code = "timeout"
     total_tries = retry_config.max_retries + 1
+    attempts_made = 0
 
     for attempt in range(total_tries):
+        attempts_made = attempt + 1
         try:
             return call_tool_with_timeout(call_fn, timeout, cancel_fn)
         except TimeoutError as exc:
             last_error = str(exc)
+            error_code = "timeout"
             if attempt + 1 < total_tries:
                 _emit_tool_retry(
                     tool_name,
@@ -138,11 +144,12 @@ def execute_tool_with_retry(
                 )
         except Exception as exc:
             last_error = f"Tool '{tool_name}' raised {type(exc).__name__}: {exc}"
+            error_code = "tool_error"
             # Non-timeout exceptions are not retried.
             break
 
-    _emit_tool_error(tool_name, total_tries, last_error, on_event)
-    return f"Error: {last_error} ({total_tries} attempts)"
+    _emit_tool_error(tool_name, error_code, attempts_made, last_error, on_event)
+    return f"Error: {last_error} ({_attempts_phrase(attempts_made)})"
 
 
 def _emit_tool_retry(
@@ -192,7 +199,8 @@ def _emit_tool_retry(
 
 def _emit_tool_error(
     tool_name: str,
-    max_attempts: int,
+    error_code: str,
+    attempts_made: int,
     error_message: str | None,
     on_event: Callable[[dict[str, Any]], None],
 ) -> None:
@@ -200,7 +208,10 @@ def _emit_tool_error(
     Emit a ``response.error`` SSE event for a terminal tool failure.
 
     :param tool_name: The tool name, e.g. ``"github.list_issues"``.
-    :param max_attempts: Total attempts configured.
+    :param error_code: The real error code, ``"timeout"`` when the tool
+        timed out or ``"tool_error"`` for any other exception.
+    :param attempts_made: The actual number of attempts made before the
+        terminal failure, not the configured maximum.
     :param error_message: Human-readable error description.
     :param on_event: Callback to emit the SSE event.
     """
@@ -213,9 +224,21 @@ def _emit_tool_error(
             "source": "tool",
             "tool_name": tool_name,
             "error": {
-                "code": "timeout",
-                "message": f"{msg} ({max_attempts} attempts exhausted)",
+                "code": error_code,
+                "message": f"{msg} ({_attempts_phrase(attempts_made)} exhausted)",
                 "detail": None,
             },
         }
     )
+
+
+def _attempts_phrase(attempts_made: int) -> str:
+    """
+    Render an attempt count with the correctly pluralised noun.
+
+    :param attempts_made: The number of attempts made, e.g. ``1``.
+    :returns: ``"1 attempt"`` for a single attempt, ``"N attempts"``
+        otherwise.
+    """
+    noun = "attempt" if attempts_made == 1 else "attempts"
+    return f"{attempts_made} {noun}"
