@@ -611,6 +611,8 @@ def test_exec_foreground_records_pid_and_streams_output(
     state = _install_fake_modal(monkeypatch)
     sandbox = _seed_sandbox(state)
     sandbox.exec_queue.append(_FakeProcess(stdout="host-output\n"))
+    # The cleanup exec on normal exit pops this next process.
+    sandbox.exec_queue.append(_FakeProcess())
 
     returncode = ModalSandboxLauncher().exec_foreground("sb-1", "omnigent host --server u")
 
@@ -627,6 +629,10 @@ def test_exec_foreground_records_pid_and_streams_output(
     assert "exec omnigent host --server u" in remote
     # Output reached the local terminal.
     assert "host-output" in capsys.readouterr().out
+    # A normal exit cleans up the run dir so it isn't orphaned in /tmp.
+    assert len(sandbox.exec_calls) == 2
+    cleanup = sandbox.exec_calls[1].argv[-1]
+    assert cleanup.startswith("rm -rf /tmp/oa-foreground-")
 
 
 def test_exec_foreground_kills_remote_on_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
