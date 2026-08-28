@@ -100,7 +100,9 @@ def test_lightbox_closes_on_a_click_beside_the_image(
     bare_y = stage_box["y"] + stage_box["height"] / 2
     assert bare_x < image_box["x"], (stage_box, image_box)
 
-    page.mouse.click(image_box["x"] + image_box["width"] / 2, image_box["y"] + image_box["height"] / 2)
+    page.mouse.click(
+        image_box["x"] + image_box["width"] / 2, image_box["y"] + image_box["height"] / 2
+    )
     expect(page.get_by_role("dialog")).to_be_visible()
 
     page.mouse.click(bare_x, bare_y)
