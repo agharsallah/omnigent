@@ -4727,6 +4727,7 @@ async def _agent_list_fetch(
     *,
     after: str | None,
     limit: int,
+    params_extra: dict[str, str] | None = None,
 ) -> _DiscoveryPage:
     """
     Fetch one cursor page of a paginated list endpoint.
@@ -4740,10 +4741,13 @@ async def _agent_list_fetch(
     :param server_client: HTTP client pointed at the Omnigent server.
     :param after: Server cursor from the previous page, if any.
     :param limit: Maximum number of source rows to fetch.
+    :param params_extra: Endpoint-specific query params merged into every
+        page request, e.g. the session listing's ``kind`` scope.
     :returns: Rows and server continuation metadata.
     """
     try:
         params: dict[str, str | int] = {"limit": limit, "order": "desc"}
+        params.update(params_extra or {})
         if after is not None:
             params["after"] = after
         resp = await server_client.get(path, params=params, timeout=30.0)
@@ -4929,7 +4933,8 @@ async def _agent_list_via_rest(
 
     - ``builtins``: ``GET /v1/agents`` (template agents), projected to
       ``{agent_id, name, description, harness}``.
-    - ``session_agents``: ``GET /v1/sessions``, projected to
+    - ``session_agents``: ``GET /v1/sessions`` over both top-level and
+      sub-agent sessions, projected to
       ``{session_id, agent_id, agent_name, status}`` so the caller can
       launch the agent directly (``sys_session_create`` by
       ``agent_id``) or ``sys_agent_get`` / ``sys_agent_download`` a
@@ -4974,6 +4979,9 @@ async def _agent_list_via_rest(
             server_client,
             after=cursor_state["session_agents"][1],
             limit=source_limit,
+            # The server lists only top-level sessions by default, which
+            # would hide the agents bound solely to a sub-agent session.
+            params_extra={"kind": "any"},
         )
     )
     spec = _effective_runner_os_env_spec(agent_spec, conversation_id, runner_workspace)
@@ -5255,7 +5263,9 @@ async def _collect_global_sessions(
     Fetch the global session list via ``GET /v1/sessions``, with connectivity.
 
     Projects each accessible session to ``{session_id, agent_name, title,
-    status, runner_id, runner_online, parent_session_id}``.
+    status, runner_id, runner_online, parent_session_id}``. Both
+    top-level and sub-agent sessions are listed; a non-null
+    ``parent_session_id`` marks a child.
     ``runner_online`` is resolved once per unique bound runner (see
     :func:`_resolve_runner_online_map`). An optional ``agent_name``
     filters the list server-side. Permission-bounded by the server (the
@@ -5269,7 +5279,11 @@ async def _collect_global_sessions(
     :param limit: Maximum number of source rows to fetch.
     :returns: Projected global session entries and continuation metadata.
     """
-    params: dict[str, str | int] = {"limit": limit, "order": "desc"}
+    # ``kind=any``: the server lists only top-level sessions by default,
+    # which would strand every child created by ``sys_session_create``
+    # once its conversation_id is lost. Their ``parent_session_id`` marks
+    # them apart from the top-level rows.
+    params: dict[str, str | int] = {"limit": limit, "order": "desc", "kind": "any"}
     if isinstance(agent_name, str) and agent_name:
         params["agent_name"] = agent_name
     if after is not None:

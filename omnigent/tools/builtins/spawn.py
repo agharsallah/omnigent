@@ -501,10 +501,12 @@ class SysSessionListTool(Tool):
       ``sys_session_get_info`` / ``sys_session_close``.
     - ``sessions`` — a **global** view of every session the caller can
       access (bounded by the server's per-user permission model), each
-      with its status and runner connectivity. An optional
-      ``agent_name`` filter narrows this list. This powers
-      orchestration: discovering sessions to inspect
-      (``sys_agent_get`` / ``sys_session_get_info``) or drive
+      with its status and runner connectivity. Sub-agent sessions are
+      included alongside top-level ones and are marked by a non-null
+      ``parent_session_id``, so a child whose ``conversation_id`` was
+      lost stays recoverable. An optional ``agent_name`` filter narrows
+      this list. This powers orchestration: discovering sessions to
+      inspect (``sys_agent_get`` / ``sys_session_get_info``) or drive
       (``sys_session_send`` by ``session_id``).
 
     The global ``sessions`` view is populated only on the runner
@@ -525,8 +527,9 @@ class SysSessionListTool(Tool):
             "(agent, title) children under this conversation (and your "
             "parent/siblings) — use their conversation_id to read "
             "history, get info, or close. 'sessions': a global list of "
-            "every session "
-            "you can access, each with status + runner connectivity, "
+            "every session you can access — top-level and sub-agent "
+            "alike, the latter marked by a non-null parent_session_id — "
+            "each with status + runner connectivity, "
             "for orchestration (inspect via sys_agent_get / "
             "sys_session_get_info, or drive via sys_session_send by "
             "session_id). Pass agent_name to filter the global list to "
