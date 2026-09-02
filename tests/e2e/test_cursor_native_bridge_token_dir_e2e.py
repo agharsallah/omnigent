@@ -65,7 +65,7 @@ print(json.dumps(result))
 
 def _run_token_write(tmpdir: Path, session_id: str) -> dict:
     """Run the cursor-native token write in a fresh process with ``TMPDIR=tmpdir``."""
-    env = dict(os.environ)
+    env = os.environ.copy()
     env["TMPDIR"] = str(tmpdir)
     proc = subprocess.run(
         [sys.executable, "-c", _CHILD_SCRIPT, session_id],
