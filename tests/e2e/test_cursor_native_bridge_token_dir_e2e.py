@@ -141,6 +141,5 @@ def test_world_writable_ancestor_is_not_trusted_for_token_write(tmp_path: Path) 
         )
     else:
         assert result["raised"] is not None, (
-            "token not written but no loud failure either: "
-            f"raised={result['raised']!r}"
+            f"token not written but no loud failure either: raised={result['raised']!r}"
         )
