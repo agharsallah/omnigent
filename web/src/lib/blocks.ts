@@ -9,7 +9,7 @@
 // Python class name lowercased (e.g. ResponseStartBlock → "response_start").
 
 import type { RoutingDecisionExtras } from "./routingDecision";
-import type { RememberScope, Response } from "./types";
+import type { CodexPersistMode, RememberScope, Response } from "./types";
 
 /**
  * Metadata attached to every stream block.
@@ -426,6 +426,8 @@ export interface ErrorBlock {
   type: "error";
   ctx: BlockContext;
   message: string;
+  /** `"info"` renders as a neutral notice pill instead of a destructive error. */
+  level?: "error" | "info";
   /** Where the error originated, e.g. "llm". */
   source: string;
   /** Machine-readable error code, e.g. "llm_auth_failed". Empty when omitted. */
@@ -478,6 +480,12 @@ export interface RetryBlock {
 export interface CompactionInProgressBlock {
   type: "compaction_loading";
   ctx: BlockContext;
+  /**
+   * Unix epoch seconds when the server first saw this compaction in
+   * progress — the authoritative anchor for the elapsed counter. Absent
+   * when the emitter doesn't track it (fall back to client receive time).
+   */
+  startedAtS?: number;
 }
 
 /** Conversation compaction finished. Emitted from `response.compaction.completed`. */
@@ -572,6 +580,7 @@ export interface ElicitationBlock {
   response: {
     action: "accept" | "decline" | "cancel" | "auto_resolved";
     content?: Record<string, unknown>;
+    _meta?: Record<string, unknown>;
   } | null;
   /**
    * Structured AskUserQuestion payload — present when the gated
@@ -617,6 +626,8 @@ export interface ElicitationBlock {
    * Absent/null for all other elicitations.
    */
   rememberScope?: RememberScope | null;
+  /** Codex-native MCP approval persistence modes advertised by the request. */
+  codexPersistModes?: CodexPersistMode[];
 }
 
 /** Union of all block types. */
