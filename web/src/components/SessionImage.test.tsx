@@ -83,16 +83,22 @@ describe("SessionImage (standalone, no host fetcher)", () => {
     expect(box).toHaveClass("h-64");
   });
 
-  it("swaps an unloadable path for the unavailable-image chip", () => {
-    // WHY: the standalone branch delegates to InlineImage, so a same-origin
-    // path that 404s collapses to the same chip the other paths show rather
-    // than parking a broken glyph in the reserved box.
+  it("keeps the reserved box when the path's bytes fail to arrive", () => {
+    // WHY: a fetched path can fail transiently (blocked network, slow bytes),
+    // and collapsing its reserved box to a chip would shift everything below
+    // it mid-read — the layout guarantee
+    // tests/e2e_ui/chat/test_transcript_image_layout.py pins. Only a corrupt
+    // `data:` URI (whose bytes ARE the source, so the failure is final)
+    // collapses to the chip.
     render(<SessionImage path="/v1/sessions/a/files/gone/content" alt="diagram" />);
-    fireEvent.error(screen.getByRole("img", { name: "diagram" }));
+    const img = screen.getByRole("img", { name: "diagram" });
+    fireEvent.error(img);
 
-    const chip = screen.getByRole("img", { name: "diagram" });
-    expect(chip).not.toHaveAttribute("src");
-    expect(chip).toHaveTextContent("diagram");
+    expect(screen.getByRole("img", { name: "diagram" })).toHaveAttribute(
+      "src",
+      "/v1/sessions/a/files/gone/content",
+    );
+    expect(screen.getByRole("img", { name: "diagram" }).closest("div")).toHaveClass("h-64");
   });
 
   it("keeps the reserved box, not the chip, while the path is unresolved", () => {

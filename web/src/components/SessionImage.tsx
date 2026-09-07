@@ -84,6 +84,11 @@ export function SessionImage({ path, alt, className }: SessionImageProps) {
  * Owns the reserved box and the failure chip for both, so a sizing or loading
  * fix lands on every direct-`<img>` preview at once. `src` may be undefined
  * while a session is still resolving; the box holds its place until it lands.
+ *
+ * Only a corrupt `data:` URI collapses to the chip — its bytes are the source,
+ * so the failure is final. A fetched path can fail transiently (blocked or
+ * slow bytes), and swapping its reserved box for a chip would shift everything
+ * below it mid-read; that box stays reserved.
  */
 export function InlineImage({
   src,
@@ -115,9 +120,10 @@ export function InlineImage({
         loading="lazy"
         decoding="async"
         // An absent src never resolved, so nothing has failed yet — latching
-        // here would strand the slot on a chip once the path arrives.
+        // here would strand the slot on a chip once the path arrives. A
+        // non-data src keeps its reserved box on error (see the doc comment).
         onError={() => {
-          if (src !== undefined) setFailedSrc(src);
+          if (src !== undefined && src.startsWith("data:")) setFailedSrc(src);
         }}
       />
     </div>
