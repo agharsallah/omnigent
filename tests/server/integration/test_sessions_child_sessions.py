@@ -37,7 +37,12 @@ from omnigent.server.routes.sessions import routes_events as routes_events_modul
 from omnigent.stores.conversation_store.sqlalchemy_store import (
     SqlAlchemyConversationStore,
 )
-from omnigent.util.session_lifecycle import CLOSED_LABEL_KEY, CLOSED_LABEL_VALUE
+from omnigent.util.session_lifecycle import (
+    CLOSED_LABEL_KEY,
+    CLOSED_LABEL_VALUE,
+    VERBATIM_TITLE_LABEL_KEY,
+    VERBATIM_TITLE_LABEL_VALUE,
+)
 from tests.server.helpers import build_agent_bundle, create_test_agent
 
 pytestmark = pytest.mark.asyncio
@@ -806,6 +811,46 @@ async def test_child_sessions_handles_title_without_colon(
     assert row["session_name"] is None
     # The agent binding is resolved independently of the title, so an
     # unparseable title still yields an attributable row.
+    assert row["agent_name"] == "test-agent"
+
+
+# ── Verbatim title (sys_session_create) ────────────────────
+
+
+async def test_child_sessions_keeps_labeled_verbatim_colon_title_whole(
+    client: httpx.AsyncClient,
+    db_uri: str,
+) -> None:
+    """
+    A child stamped with the ``omnigent.title_verbatim`` label keeps a
+    colon-bearing title whole: no ``tool`` is derived from the title,
+    ``session_name`` carries the full verbatim string, and attribution
+    comes from the durable agent binding. Splitting here would report a
+    phantom agent named after the text before the first ``":"``.
+
+    :param client: The test HTTP client.
+    :param db_uri: Per-test SQLite database URI.
+    """
+    session = await _create_parent_session(client)
+    conv_store = SqlAlchemyConversationStore(db_uri)
+
+    child = _seed_child(
+        conv_store=conv_store,
+        parent_id=session["id"],
+        title="probe:colon-title",
+        agent_id=session["agent_id"],
+    )
+    conv_store.set_labels(child.id, {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE})
+
+    resp = await client.get(f"/v1/sessions/{session['id']}/child_sessions")
+    rows = resp.json()["data"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "probe:colon-title"
+    # Verbatim marker: the title is never split into an agent prefix.
+    assert row["tool"] is None
+    assert row["session_name"] == "probe:colon-title"
+    # Identity comes from the durable binding, not the title text.
     assert row["agent_name"] == "test-agent"
 
 

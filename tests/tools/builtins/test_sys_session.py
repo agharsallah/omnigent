@@ -37,7 +37,12 @@ from omnigent.tools.builtins.spawn import (
     SysSessionListTool,
     SysSessionSendTool,
 )
-from omnigent.util.session_lifecycle import CLOSED_LABEL_KEY, CLOSED_LABEL_VALUE
+from omnigent.util.session_lifecycle import (
+    CLOSED_LABEL_KEY,
+    CLOSED_LABEL_VALUE,
+    VERBATIM_TITLE_LABEL_KEY,
+    VERBATIM_TITLE_LABEL_VALUE,
+)
 
 
 @dataclass
@@ -1204,6 +1209,63 @@ def test_session_list_surfaces_verbatim_titled_child(
         "title": "auth",
         "conversation_id": session_fixture.child_conv_id,
     } in payload["sub_agents"]
+
+
+def test_session_list_keeps_labeled_verbatim_colon_title_whole(
+    session_fixture: _Fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    A ``sys_session_create`` child stamped with the verbatim-title
+    label keeps a colon-bearing title whole and is named from its
+    durable agent binding — the text before the first ``":"`` must not
+    be misread as an agent name.
+    """
+    child_id = _add_verbatim_titled_child(session_fixture, title="probe:colon-title")
+    session_fixture.conv_store.set_labels(
+        child_id, {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE}
+    )
+    monkeypatch.setattr(
+        "omnigent.runtime.get_agent_store",
+        lambda: _NamesOnlyAgentStore({_PROBE_AGENT_ID: "prober"}),
+    )
+
+    payload = json.loads(SysSessionListTool().invoke("{}", session_fixture.ctx))
+
+    assert {
+        "agent": "prober",
+        "title": "probe:colon-title",
+        "conversation_id": child_id,
+    } in payload["sub_agents"]
+
+
+def test_close_tombstones_labeled_verbatim_colon_titled_child(
+    session_fixture: _Fixture,
+) -> None:
+    """
+    ``sys_session_close`` treats a labeled verbatim title as having no
+    agent prefix even when it contains a ``":"``: the tombstone keeps
+    the whole display title instead of splitting off a phantom agent.
+    """
+    child_id = _add_verbatim_titled_child(session_fixture, title="probe:colon-title")
+    session_fixture.conv_store.set_labels(
+        child_id, {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE}
+    )
+
+    payload = json.loads(
+        SysSessionCloseTool().invoke(
+            json.dumps({"conversation_id": child_id}),
+            session_fixture.ctx,
+        )
+    )
+
+    assert payload["closed"] is True
+    assert payload["agent"] is None
+    assert payload["title"] == "probe:colon-title"
+    closed_child = session_fixture.conv_store.get_conversation(child_id)
+    assert closed_child is not None
+    assert closed_child.title == f"probe:colon-title{_CLOSED_TITLE_INFIX}{child_id}"
+    assert closed_child.labels[CLOSED_LABEL_KEY] == CLOSED_LABEL_VALUE
 
 
 def test_session_list_skips_closed_verbatim_titled_child(

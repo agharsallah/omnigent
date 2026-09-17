@@ -27,6 +27,7 @@ from omnigent.util.session_lifecycle import (
     CLOSED_LABEL_VALUE,
     CLOSED_TITLE_INFIX,
     is_session_closed,
+    is_title_verbatim,
     title_without_closed_marker,
 )
 
@@ -1248,13 +1249,20 @@ def _agent_title_from_conversation(child: Conversation) -> _AgentTitle:
     ``"<agent>:<title>:closed:<conv_id>"`` when closed); both forms
     split on the first ``":"``. ``sys_session_create`` instead stores
     the caller's title verbatim — possibly colonless, possibly absent —
-    so those yield ``agent=None`` with the display title.
+    and stamps the ``omnigent.title_verbatim`` label, so those yield
+    ``agent=None`` with the whole display title even when the verbatim
+    title happens to contain a ``":"``.
 
     :param child: The child :class:`Conversation`.
     :returns: An :class:`_AgentTitle` with the closed marker stripped
         from the title side when present.
     """
     display_title = title_without_closed_marker(child.title)
+    if is_title_verbatim(child.labels):
+        # A sys_session_create child: the title is the caller's verbatim
+        # string, never a framework "<agent>:<title>" name — keep it
+        # whole and let identity come from the durable agent binding.
+        return _AgentTitle(agent=None, title=display_title)
     if not display_title or ":" not in display_title:
         return _AgentTitle(agent=None, title=display_title)
     sa_agent, _, sa_title = display_title.partition(":")

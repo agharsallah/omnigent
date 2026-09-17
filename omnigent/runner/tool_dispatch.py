@@ -109,7 +109,10 @@ from omnigent.tools.builtins.upload_file import UploadFileTool, safe_resolve
 from omnigent.util.session_lifecycle import (
     CLOSED_LABEL_KEY,
     CLOSED_LABEL_VALUE,
+    VERBATIM_TITLE_LABEL_KEY,
+    VERBATIM_TITLE_LABEL_VALUE,
     is_session_closed,
+    is_title_verbatim,
     title_without_closed_marker,
 )
 
@@ -3129,10 +3132,14 @@ async def _send_to_existing_session(
             }
         )
     display_title = title_without_closed_marker(_optional_string(snap_data.get("title")))
-    parsed = _parse_session_title(display_title)
-    # A sys_session_create child keeps its verbatim title and has no
-    # sub_agent_name, so when the title does not parse as "<agent>:<title>"
-    # the identity comes from the snapshot's agent fields instead.
+    # A sys_session_create child keeps its verbatim title (marked by the
+    # ``omnigent.title_verbatim`` label, and possibly colon-bearing), so
+    # its identity comes from the snapshot's agent fields; only
+    # framework-named "<agent>:<title>" titles are parsed.
+    if is_title_verbatim(_string_mapping(snap_data.get("labels"))):
+        parsed = _ParsedTitle(agent=None, title=None)
+    else:
+        parsed = _parse_session_title(display_title)
     agent_label = (
         parsed.agent
         or _optional_string(snap_data.get("sub_agent_name"))
@@ -3268,6 +3275,12 @@ def _build_session_create_body(
     body: _JsonObject = {
         "agent_id": agent_id,
         "parent_session_id": conversation_id,
+        # sys_session_create stores the caller's title verbatim (no
+        # "<agent>:<title>" framework prefix), so mark the child durably:
+        # readers must not split a colon-bearing verbatim title into a
+        # phantom agent name, and instead attribute the child from its
+        # agent binding.
+        "labels": {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE},
     }
     if isinstance(title, str) and title:
         body["title"] = title
@@ -3632,7 +3645,14 @@ async def _upload_config_bundle(
     except Exception as exc:  # noqa: BLE001 — disk/tar errors become a typed tool error.
         return json.dumps({"error": f"sys_session_create failed to bundle config: {exc}"})
 
-    metadata: _JsonObject = {"parent_session_id": conversation_id}
+    metadata: _JsonObject = {
+        "parent_session_id": conversation_id,
+        # Same durable marker as the agent_id create path: the child's
+        # title is the caller's verbatim string, never a framework
+        # "<agent>:<title>" name, so readers attribute it from the
+        # agent binding instead of splitting the title.
+        "labels": {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE},
+    }
     title = args.get("title")
     if isinstance(title, str) and title:
         metadata["title"] = title
@@ -5993,8 +6013,10 @@ def _child_rows_to_entries(
     title (including the ``"ui:<agent>:<label>"`` form), and keep that
     title-derived agent so ``sys_session_send`` named mode still
     resolves them. ``sys_session_create`` children instead store the
-    caller's title verbatim (or none), so they are named from the
-    durable ``agent_name`` binding.
+    caller's title verbatim (or none) and carry the
+    ``omnigent.title_verbatim`` label, so they keep the whole title and
+    are named from the durable ``agent_name`` binding — even when the
+    verbatim title happens to contain a ``":"``.
 
     :param rows: ``data`` rows from ``GET .../child_sessions``.
     :returns: ``[{"agent", "title", "conversation_id"}, ...]``.
@@ -6007,11 +6029,16 @@ def _child_rows_to_entries(
         if conversation_id is None or is_session_closed(labels, title):
             continue
         session_name = _optional_string(row.get("session_name"))
-        if session_name is not None:
-            # A verbatim colon-bearing title has no title-derived agent
-            # (``tool`` is null); attribute it from the durable binding.
+        if is_title_verbatim(labels):
+            # ``sys_session_create`` child: the title is the caller's
+            # verbatim string (possibly colon-bearing), so keep it whole
+            # and attribute the child from its durable agent binding,
+            # never a title parse.
+            agent = _optional_string(row.get("agent_name")) or _optional_string(row.get("tool"))
+            entry_title: str | None = title
+        elif session_name is not None:
             agent = _optional_string(row.get("tool")) or _optional_string(row.get("agent_name"))
-            entry_title: str | None = session_name
+            entry_title = session_name
         else:
             agent = _optional_string(row.get("agent_name")) or _optional_string(row.get("tool"))
             entry_title = title
@@ -6264,10 +6291,15 @@ async def _session_close_via_rest(
     if scope_error is not None:
         return scope_error
     raw_title = _optional_string(target_snap.get("title"))
-    parsed = _parse_session_title(raw_title)
-    # A colonless title only means the child was created with a
-    # verbatim title; the parent check above already proved it is a
-    # sub-agent. Tombstone the display title as-is in that case.
+    # A verbatim-titled child (``sys_session_create``, marked by the
+    # ``omnigent.title_verbatim`` label) has no agent prefix to recover,
+    # even when its title contains a ``":"``; the parent check above
+    # already proved it is a sub-agent. Tombstone its display title
+    # as-is, like any colonless title.
+    if is_title_verbatim(_string_mapping(target_snap.get("labels"))):
+        parsed = _ParsedTitle(agent=None, title=None)
+    else:
+        parsed = _parse_session_title(raw_title)
     if parsed.agent is not None:
         display_title = parsed.title
         prefix = f"{parsed.agent}:{display_title}"

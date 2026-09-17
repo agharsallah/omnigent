@@ -297,6 +297,7 @@ from omnigent.util.reasoning_effort import (
     validate_effort,
 )
 from omnigent.util.session_lifecycle import (
+    is_title_verbatim,
     labels_with_closed_status,
     title_without_closed_marker,
 )
@@ -10132,6 +10133,15 @@ def _child_session_summary_from_conversation(
         # the raw Devin agent_id as ``session_name`` for correlation.
         tool = _devin_subagent_display_tool(labels)
         session_name = labels.get(_DEVIN_NATIVE_SUBAGENT_AGENT_ID_LABEL_KEY)
+    elif is_title_verbatim(labels):
+        # ``sys_session_create`` child: the title is the caller's verbatim
+        # string (possibly colon-bearing), never a framework
+        # ``"{agent_type}:{session_name}"`` name. Keep it whole as
+        # ``session_name`` and derive no ``tool`` from it — attribution
+        # comes from the durable ``agent_name`` binding resolved by the
+        # batched caller.
+        tool = None
+        session_name = display_title or None
     elif display_title and ":" in display_title:
         head, _, tail = display_title.partition(":")
         if head == _UI_ADDED_AGENT_TITLE_PREFIX and ":" in tail:

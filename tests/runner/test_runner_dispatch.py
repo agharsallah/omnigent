@@ -93,7 +93,12 @@ from omnigent.runtime.harnesses.process_manager import HarnessProcessManager
 from omnigent.runtime.prompt import EMBEDDED_BROWSER_PRIORITY_INSTRUCTION
 from omnigent.server.schemas import CreateResponseRequest as _CreateResponseRequest
 from omnigent.spec.types import AgentSpec, ExecutorSpec, SharePolicy, ToolsConfig
-from omnigent.util.session_lifecycle import CLOSED_LABEL_KEY, CLOSED_LABEL_VALUE
+from omnigent.util.session_lifecycle import (
+    CLOSED_LABEL_KEY,
+    CLOSED_LABEL_VALUE,
+    VERBATIM_TITLE_LABEL_KEY,
+    VERBATIM_TITLE_LABEL_VALUE,
+)
 from tests.runner.conftest import (
     _FakeProcessManager as _RecoveryFakeProcessManager,
 )
@@ -6518,6 +6523,51 @@ async def test_session_list_attributes_whole_titled_child_from_binding() -> None
 
 
 @pytest.mark.asyncio
+async def test_session_list_keeps_labeled_verbatim_colon_title_whole() -> None:
+    """
+    A row carrying the ``omnigent.title_verbatim`` label keeps its
+    colon-bearing title whole and takes its agent from the durable
+    ``agent_name`` binding — even when the server has split the title
+    into ``tool`` / ``session_name``. The label, not the punctuation,
+    decides how the row is read.
+    """
+    from omnigent.runner.tool_dispatch import _execute_session_query_tool
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/sessions/conv_parent":
+            return httpx.Response(200, json={"id": "conv_parent", "parent_session_id": None})
+        assert request.url.path == "/v1/sessions/conv_parent/child_sessions"
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "c_labeled",
+                        "title": "probe:colon-title",
+                        # A title-derived split like an older server
+                        # would produce; the label must override it.
+                        "tool": "probe",
+                        "session_name": "colon-title",
+                        "agent_name": "researcher",
+                        "labels": {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE},
+                    },
+                ],
+            },
+        )
+
+    async with _session_query_client(handler) as client:
+        out = json.loads(
+            await _execute_session_query_tool(
+                "sys_session_list", "{}", conversation_id="conv_parent", server_client=client
+            )
+        )
+    assert out["sub_agents"] == [
+        {"agent": "researcher", "title": "probe:colon-title", "conversation_id": "c_labeled"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_session_list_adds_main_and_siblings_for_child_caller() -> None:
     """
     When the caller is itself a child (a user-added agent), sys_session_list
@@ -7875,6 +7925,10 @@ async def test_sys_session_create_spawns_child_under_caller() -> None:
     assert captured["parent_session_id"] == "conv_caller"
     assert captured["agent_id"] == "ag_x"
     assert captured["title"] == "auth"
+    # The title is stored verbatim, so the create stamps the durable
+    # marker that stops readers from splitting a colon-bearing title
+    # into a phantom agent name.
+    assert captured["labels"] == {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE}
     assert captured["initial_items"][0]["data"]["content"][0]["text"] == "start"
     handle = json.loads(output)
     assert handle["conversation_id"] == "conv_child"
