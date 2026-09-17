@@ -5682,7 +5682,9 @@ def _child_rows_to_entries(
             continue
         session_name = _optional_string(row.get("session_name"))
         if session_name is not None:
-            agent = _optional_string(row.get("tool"))
+            # A verbatim colon-bearing title has no title-derived agent
+            # (``tool`` is null); attribute it from the durable binding.
+            agent = _optional_string(row.get("tool")) or _optional_string(row.get("agent_name"))
             entry_title: str | None = session_name
         else:
             agent = _optional_string(row.get("agent_name")) or _optional_string(row.get("tool"))

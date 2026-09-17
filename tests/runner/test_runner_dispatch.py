@@ -6230,6 +6230,46 @@ async def test_session_list_surfaces_verbatim_titled_children() -> None:
 
 
 @pytest.mark.asyncio
+async def test_session_list_attributes_whole_titled_child_from_binding() -> None:
+    """
+    A verbatim colon-bearing title kept whole by the server arrives with
+    ``session_name`` set but no title-derived ``tool``; the entry's agent
+    must come from the durable ``agent_name`` binding, not stay empty.
+    """
+    from omnigent.runner.tool_dispatch import _execute_session_query_tool
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/sessions/conv_parent":
+            return httpx.Response(200, json={"id": "conv_parent", "parent_session_id": None})
+        assert request.url.path == "/v1/sessions/conv_parent/child_sessions"
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "c_whole",
+                        "title": "research:pricing",
+                        "tool": None,
+                        "session_name": "research:pricing",
+                        "agent_name": "researcher",
+                    },
+                ],
+            },
+        )
+
+    async with _session_query_client(handler) as client:
+        out = json.loads(
+            await _execute_session_query_tool(
+                "sys_session_list", "{}", conversation_id="conv_parent", server_client=client
+            )
+        )
+    assert out["sub_agents"] == [
+        {"agent": "researcher", "title": "research:pricing", "conversation_id": "c_whole"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_session_list_adds_main_and_siblings_for_child_caller() -> None:
     """
     When the caller is itself a child (a user-added agent), sys_session_list
