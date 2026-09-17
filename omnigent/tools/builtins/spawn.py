@@ -16,7 +16,7 @@ from omnigent.entities import (
     Conversation,
     ConversationItem,
 )
-from omnigent.native_coding_agents import public_agent_name
+from omnigent.native.native_coding_agents import public_agent_name
 from omnigent.runtime import pending_elicitations
 from omnigent.runtime.prompt import SUBAGENT_WAKE_NOTICE_SHAPE
 from omnigent.spec import AgentSpec
