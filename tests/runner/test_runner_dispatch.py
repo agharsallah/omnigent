@@ -8107,7 +8107,14 @@ async def test_sys_session_create_bundle_mode_uploads_child_under_caller(
         f"expected exactly one create POST, got {len(create_requests)}"
     )
     parts = _parse_multipart_create(create_requests[0])
-    assert parts["metadata"] == {"parent_session_id": "conv_caller", "title": "auth"}
+    assert parts["metadata"] == {
+        "parent_session_id": "conv_caller",
+        "title": "auth",
+        # The title is stored verbatim, so the create stamps the durable
+        # marker that stops readers from splitting a colon-bearing title
+        # into a phantom agent name.
+        "labels": {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE},
+    }
 
     # The uploaded bundle is a gzipped tar holding the authored config
     # verbatim — proves the local file traversed materialize → tar.
