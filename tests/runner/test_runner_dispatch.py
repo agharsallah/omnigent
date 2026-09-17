@@ -6689,6 +6689,45 @@ async def test_session_peek_returns_chronological_projected_items() -> None:
     ]
 
 
+@pytest.mark.asyncio
+async def test_session_peek_keeps_labeled_verbatim_colon_title_whole() -> None:
+    """
+    ``sys_session_get_history`` labels a verbatim-titled child (the
+    ``omnigent.title_verbatim`` marker) from its durable agent binding
+    and keeps the colon-bearing title whole, matching the listing
+    readers — instead of reporting the text before the ``":"`` as the
+    agent.
+    """
+    from omnigent.runner.tool_dispatch import _execute_session_query_tool
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/sessions/conv_target/items":
+            return httpx.Response(200, json={"object": "list", "data": []})
+        if request.url.path == "/v1/sessions/conv_target":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "conv_target",
+                    "title": "probe:colon-title",
+                    "agent_name": "researcher",
+                    "labels": {VERBATIM_TITLE_LABEL_KEY: VERBATIM_TITLE_LABEL_VALUE},
+                },
+            )
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    async with _session_query_client(handler) as client:
+        out = json.loads(
+            await _execute_session_query_tool(
+                "sys_session_get_history",
+                json.dumps({"conversation_id": "conv_target", "tail_items": 5}),
+                conversation_id="conv_caller",
+                server_client=client,
+            )
+        )
+    assert out["agent"] == "researcher"
+    assert out["title"] == "probe:colon-title"
+
+
 _REST_HISTORY_CONTENT_SCENARIOS = [
     pytest.param(3000, 4000, "R" * 3000, id="raised-limit"),
     pytest.param(3000, None, "R" * 2000 + " [truncated]", id="default-limit"),

@@ -6382,7 +6382,19 @@ async def _fetch_peek_meta(
     body = _string_object_dict(snap.json())
     if body is None:
         return _PeekMeta(agent=None, title=None, pending_elicitations=[])
-    parsed = _parse_session_title(_optional_string(body.get("title")))
+    title_value = _optional_string(body.get("title"))
+    if is_title_verbatim(_string_mapping(body.get("labels"))):
+        # A sys_session_create child (marked by the
+        # ``omnigent.title_verbatim`` label) keeps its verbatim title
+        # whole — possibly colon-bearing — and takes its identity from
+        # the snapshot's durable agent fields, matching the send/list
+        # readers.
+        agent = _optional_string(body.get("sub_agent_name")) or _optional_string(
+            body.get("agent_name")
+        )
+        parsed = _ParsedTitle(agent=agent, title=title_without_closed_marker(title_value))
+    else:
+        parsed = _parse_session_title(title_value)
     raw_pending = body.get("pending_elicitations")
     pending = _json_object_list(raw_pending)
     return _PeekMeta(agent=parsed.agent, title=parsed.title, pending_elicitations=pending)

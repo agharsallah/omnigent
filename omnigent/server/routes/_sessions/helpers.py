@@ -4525,10 +4525,21 @@ def _publish_child_status_to_parent(session_id: str, status: str) -> None:
             return
         parent_id = conv.parent_conversation_id
         items_by_child = store.list_latest_message_items_for_conversations([conv.id], 10)
+        # Resolve the durable agent binding's name so a status edge
+        # carries the same ``agent_name`` the list and initial snapshot
+        # populate — the event replaces the whole child summary, so a
+        # ``None`` here would blank the field the rail just rendered.
+        agent_name: str | None = None
+        if conv.agent_id is not None:
+            from omnigent.runtime._globals import _agent_store
+
+            if _agent_store is not None:
+                agent_name = _agent_store.get_names([conv.agent_id]).get(conv.agent_id)
         summary = _child_session_summary_from_conversation(
             conv,
             parent_id,
             _latest_message_preview(items_by_child.get(conv.id, [])),
+            agent_name,
             cached_status=status,
         )
         event = SessionChildSessionUpdatedEvent(
