@@ -58,7 +58,7 @@ from urllib import request
 from omnigent._platform import is_wsl, stable_user_id
 from omnigent.harnesses.claude_native.message_display_hook import MESSAGE_DELTAS_FILE
 from omnigent.harnesses.claude_native.status import CONTEXT_RAW_FILE
-from omnigent.harnesses.kiro_native.bridge import bridge_root as kiro_bridge_root
+from omnigent.harnesses.kiro_native import bridge as kiro_bridge
 from omnigent.models.claude_model_vocabulary import MODEL_VOCABULARY_ENV_VARS
 from omnigent.models.model_metadata import concrete_reported_model
 from omnigent.util.json_types import JsonObject as _JsonObject
@@ -541,7 +541,7 @@ def _trusted_parent_for_bridge_dir(target: Path) -> Path:
             trusted_parent = opencode_root.parent.parent
         return _absolute_syntactic_path(trusted_parent)
 
-    kiro_root = _absolute_syntactic_path(kiro_bridge_root())
+    kiro_root = _absolute_syntactic_path(kiro_bridge.bridge_root())
     if target.is_relative_to(kiro_root):
         # Same shape as cursor-native ($TMPDIR/omnigent-<uid>/kiro-native): trust
         # the uid-scoped temp dir's parent and validate/chmod the two

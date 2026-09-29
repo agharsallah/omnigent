@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from omnigent._platform import stable_user_id
+from omnigent.harnesses.claude_native import bridge as claude_bridge
 from omnigent.util.json_types import JsonObject as _JsonObject
 
 
@@ -122,36 +123,10 @@ def bridge_dir_for_session_id(session_id: str) -> Path:
     return _BRIDGE_ROOT / digest
 
 
-def _ensure_secure_bridge_dir(bridge_dir: Path) -> None:
-    """Create/validate *bridge_dir* as an owner-only chain before writing secrets.
-
-    ``Path.mkdir(mode=0o700, parents=True, exist_ok=True)`` applies the mode to
-    the leaf only and silently trusts any pre-existing ancestor, so on a shared
-    host an attacker could pre-create ``$TMPDIR/omnigent-<uid>`` (or a deeper
-    ancestor) as a symlink / world-writable dir and redirect the bridge tree.
-    That tree holds ``bridge.json`` — a bearer token for the relay's localhost
-    control endpoint — so its directory chain must be hardened. Delegate to the
-    same ``_ensure_secure_dir`` the shared relay (``start_tool_relay``) already
-    applies to token-bearing trees; it rejects symlinked / non-owned /
-    group-or-other accessible ancestors (the kiro-native root is in its
-    allowlist). Lazy import avoids a cycle (``claude_native.bridge`` imports
-    this module's ``bridge_root`` at module level).
-
-    :raises RuntimeError: If any ancestor fails owner-only validation.
-    """
-    from omnigent.harnesses.claude_native.bridge import _ensure_secure_dir
-
-    _ensure_secure_dir(bridge_dir)
-
-
 def prepare_bridge_dir(session_id: str) -> Path:
-    """Create and return the per-session Kiro bridge directory.
-
-    :raises RuntimeError: If the bridge dir fails owner-only validation
-        (:func:`_ensure_secure_bridge_dir`).
-    """
+    """Return an owner-only session directory, raising if its ancestors are unsafe."""
     bridge_dir = bridge_dir_for_session_id(session_id)
-    _ensure_secure_bridge_dir(bridge_dir)
+    claude_bridge.ensure_secure_dir(bridge_dir)
     return bridge_dir
 
 
@@ -161,16 +136,11 @@ def acp_record_path(bridge_dir: Path) -> Path:
 
 
 def write_mcp_bridge_config(bridge_dir: Path) -> None:
-    """Write the token config the shared Omnigent MCP bridge requires at boot.
+    """Write the relay token after validating the directory chain; reuse it on resume.
 
-    ``serve-mcp`` (``omnigent.harnesses.claude_native.bridge``) reads ``bridge.json`` and
-    refuses to start without a ``token``. Mirrors cursor-native's writer;
-    idempotent so a resume reuses the existing token.
-
-    :raises RuntimeError: If the bridge dir fails owner-only validation
-        (:func:`_ensure_secure_bridge_dir`) — the token is not written.
+    :raises RuntimeError: If a bridge ancestor is unsafe.
     """
-    _ensure_secure_bridge_dir(bridge_dir)
+    claude_bridge.ensure_secure_dir(bridge_dir)
     config_path = bridge_dir / _MCP_BRIDGE_CONFIG_FILE
     if config_path.exists():
         return

@@ -50,13 +50,7 @@ _PERMISSION_PANE_DATE = _PERMISSION_PANE.replace("↓ Shell pwd", "↓ Shell dat
 
 @pytest.fixture
 def secure_bridge_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A bridge dir under a production-shaped kiro root (passes secure validation).
-
-    ``write_mcp_bridge_config`` hardens the bridge tree via ``_ensure_secure_dir``,
-    which requires the dir to live below a known bridge root. Mirror the real
-    layout (``<uid-scoped temp>/kiro-native/<digest>``) so the owner-only
-    ancestor walk anchors at ``tmp_path``.
-    """
+    """Mirror the Kiro directory layout, with tmp_path as the trusted parent."""
     monkeypatch.setattr(bridge, "_BRIDGE_ROOT", tmp_path / "omnigent-test" / "kiro-native")
     return bridge.bridge_dir_for_session_id("conv_kiro")
 
@@ -658,18 +652,11 @@ def test_write_mcp_bridge_config_rejects_symlinked_ancestor(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A symlinked bridge-tree ancestor is refused — the token is never written.
-
-    bridge.json holds a bearer token for the relay's control endpoint, so the
-    dir must pass owner-only ancestor validation. A pre-created symlinked
-    ancestor must fail loudly instead of redirecting the token into storage the
-    attacker controls.
-    """
+    """Reject symlinked ancestors before writing the relay token."""
     real_root = tmp_path / "omnigent-test"
     monkeypatch.setattr(bridge, "_BRIDGE_ROOT", real_root / "kiro-native")
     bridge_dir = bridge.bridge_dir_for_session_id("conv_kiro")
 
-    # Redirect an ancestor (the uid-scoped dir) through a symlink.
     elsewhere = tmp_path / "attacker"
     elsewhere.mkdir()
     real_root.symlink_to(elsewhere, target_is_directory=True)
@@ -678,7 +665,6 @@ def test_write_mcp_bridge_config_rejects_symlinked_ancestor(
         bridge.write_mcp_bridge_config(bridge_dir)
 
     assert not (bridge_dir / "bridge.json").exists()
-    # No token leaked into the redirected location.
     assert not (elsewhere / "kiro-native").exists()
 
 
